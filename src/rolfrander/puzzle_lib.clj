@@ -1,22 +1,27 @@
-(ns puzzle-lib
+(ns rolfrander.puzzle-lib
   (:require [clojure.data.priority-map :refer [priority-map priority-map-by]]
-            [clojure.java.io :as io]))
+            [clojure.java.io :as io]
+            [clj-http.client :as http]))
 
-(def ^:dynamic *debug* false)
+(def ^:dynamic *debug* "Controls the printing of debuggin-information from this library." false)
 
 (defn get-config 
-  "Reads /config. Example config-file>
+  "Reads /config. 
    
+   Example config-file:
+   
+   ```
    {
      :session \"session-cookie\"
-   }"
+   }```"
   []
   (with-open [c (java.io.PushbackReader.
                  (io/reader "config"))]
     (read c)))
 
 (defn get-data 
-  "Download and cache puzzle input from advent of code. Needs a session cookie stored in /config under key :session"
+  "Download and cache puzzle input from advent of code. 
+   Needs a session cookie stored in `/config` under key `:session`"
   [year day]
   (let [url (format "https://adventofcode.com/%d/day/%d/input" year day)
         local-file (format "resources/advent%d/day%02d.txt" year day)]
@@ -33,14 +38,16 @@
             body))))))
 
 (defn safe-parse-number 
-  "if s looks like a base-10 number, return a long, otherwise return original string"
+  "Safe parsing of string to long.
+   If s looks like a base-10 number, return a long, otherwise return original string"
   [s]
   (if (re-matches #"[+-]?[0-9]+" s)
     (Long/parseLong s)
     s))
 
 (defn split-by
-  "returns a lazy sequence of seq from coll, starting a new sequence everytime pred change from true to false"
+  "Splits sequence.
+   Returns a lazy sequence of seq from coll, starting a new sequence everytime pred change from true to false"
   [pred coll]
   (lazy-seq
    (when-let [s (seq coll)]
@@ -55,7 +62,8 @@
                  (split-by pred ys))))))))
 
 (defn dijkstra
-  "for all nodes, find the shortest path from source to destination. 
+  "Find shortest path.
+   For all nodes, find the shortest path from source to destination. 
    Nodes is a collection of nodes. Source is the start-node.
    Neighbour-fn takes one parameter, v, and returns all neighbours of v. If all nodes
    are not known beforehand, use a-star instead.
@@ -63,20 +71,18 @@
    Optional parameters:
    * weight-fn takes two paramenters, u and v, and returns the distance from u to v. 
    Both u and v are taken from nodes. Default is for all weights to be 1.
-   
    * result-type is :dist :prev or :both, specifying returning distance, path or both
-   
-   * destination is a test to whether the destination is reached. If not specified, 
+   * dest? is a test to whether the destination is reached. If not specified, 
    all distances and all paths are returned"
-  [nodes source neighbour-fn & {:keys [weight-fn result-type destination-fn]
+  [nodes source neighbour-fn & {:keys [weight-fn result-type dest?]
                                 :or {weight-fn (constantly 1)
                                      result-type :both
-                                     destination-fn (constantly false)}}]
+                                     dest? (constantly false)}}]
   ; implemented from wikipedia https://en.wikipedia.org/wiki/Dijkstra's_algorithm
   (letfn [(get-path [prev dest] (if (contains? prev dest)
                                   (cons prev (get-path prev (prev dest)))
                                   '()))]
-    (loop [dist (-> (into {} (map vector nodes (repeat 999)))
+    (loop [dist (-> (zipmap nodes (repeat 999))
                     (assoc source 0))
            prev {}
            Q (into (priority-map) dist)]
@@ -84,7 +90,7 @@
         [dist prev]
         (let [u (first (peek Q))
               Q (pop Q)]
-          (if (destination-fn u)
+          (if (dest? u)
             (case result-type
               :dist (dist u)
               :prev (get-path (prev u) u)
@@ -103,28 +109,29 @@
 
 
 (defn a-star 
-  "find the shortest path from start to goal, given a heuristic. If the heruistic is admissible (never overestimates 
+  "Find the shortest path from start to goal, given a heuristic.
+   If the heruistic is admissible (never overestimates 
    the actual distance), a-star is guaranteed to find the shortest path. If the heuristic is consistent, a-star is
    optimally efficient. Consistent means that h(x) ≤ d(x, y) + h(y).
    
    * Start is the start-node, 
-   * goal-fn is a function taking one parameter returning true if the goal is reached
-   * heurictic-fn is a function returning the assumed distance from a node to the destination
-   * paths-fn take a node as input and returns the possible paths out of that node
-   * neightbour-fn takes a node and a path as input and returns the target-node of that path
-   * dist-fn takes a path as input and returns the distand for that path
-   * result type is :path for returning the nodes traveled through, :count for returning the number 
-     of nodes, :last for returning the last node or :dist for returning the shortest known distance from start to goal.
+   * `goal?` is a function taking one parameter returning true if the goal is reached
+   * `heurictic-fn` is a function returning the assumed distance from a node to the destination
+   * `paths-fn` take a node as input and returns the possible paths out of that node
+   * `neightbour-fn` takes a node and a path as input and returns the target-node of that path
+   * `dist-fn` takes a path as input and returns the distand for that path
+   * `result-type` is `:path` for returning the nodes traveled through, `:count` for returning the number 
+     of nodes, `:last` for returning the last node or `:dist` for returning the shortest known distance from start to goal.
    
-   the paths-fn can be omitted, then the neighbour-fn should take as input a node and return all neighbour-nodes, and
-   the dist-fn should take two neighbouring nodes as input and return the distance between them. This is the canonical 
+   the `paths-fn` can be omitted, then the `neighbour-fn` should take as input a node and return all neighbour-nodes, and
+   the `dist-fn` should take two neighbouring nodes as input and return the distance between them. This is the canonical 
    version of the algorithm documented on wikipedia.
 
-   if puzzle-lib/*debug* is set to true, the algorithm will report the current longest distance as it goes.
+   if `puzzle-lib/*debug*` is set to true, the algorithm will report the current longest distance as it goes.
    "
-  ([start goal-fn heuristic-fn neighbour-fn dist-fn result-type]
+  ([start goal? heuristic-fn neighbour-fn dist-fn result-type]
    (a-star start
-           goal-fn
+           goal?
            heuristic-fn
            (fn [src] (map #(vector src %) (neighbour-fn src)))
            (fn [_src1 [_src2 dest]] dest) ; [_src dest] is returned from the paths-fn over
@@ -132,7 +139,7 @@
            result-type))
 
 
-  ([start goal-fn heuristic-fn paths-fn neighbour-fn dist-fn result-type]
+  ([start goal? heuristic-fn paths-fn neighbour-fn dist-fn result-type]
    (let [summarize (fn [came-from current start-i aggr-fn]
                      (loop [i start-i
                             current current]
@@ -150,7 +157,7 @@
          (cond (nil? current)      ; while openSet is not empty
                nil                    ; return failure
 
-               (goal-fn current)                              ; if current = goal
+               (goal? current)                              ; if current = goal
                (case result-type
                  :path  (summarize came-from current '() conj) ; return reconstruct_path(cameFrom, current)
                  :count (summarize came-from current   0 (fn [a _b] (inc a)))

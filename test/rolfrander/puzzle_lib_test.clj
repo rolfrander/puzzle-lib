@@ -1,6 +1,6 @@
-(ns puzzle-lib.test
+(ns rolfrander.puzzle-lib-test
   (:require [clojure.test :as test]
-            [puzzle-lib :refer :all]))
+            [rolfrander.puzzle-lib :refer :all]))
 
 (let [neighbours {"oslo"       ["sandvika" "lillestrøm" "moss" "kjeller"]
                   "sandvika"   ["oslo" "asker"]
@@ -21,15 +21,14 @@
                 #{"lillestrøm" "oslo"} 12
                 #{"sandvika" "oslo"} 22
                 #{"asker" "sandvika"} 18}
-      
+
       paths-count [{"kjeller" 3 "asker" 0 "fredrikstad" 4 "lillestrøm" 3 "sandvika" 1 "sarpsborg" 4 "moss" 3 "oslo" 2 "fetsund" 4}
                    {"sandvika" "asker" "oslo" "sandvika" "lillestrøm" "oslo" "moss" "oslo" "kjeller" "oslo" "fetsund" "lillestrøm" "sarpsborg" "moss" "fredrikstad" "moss"}]
       paths-dist [{"kjeller" 54 "asker" 0 "fredrikstad" 145 "lillestrøm" 52 "sandvika" 18 "sarpsborg" 150 "moss" 120 "oslo" 40 "fetsund" 55}
-                  {"sandvika" "asker" "oslo" "sandvika" "lillestrøm" "oslo" "moss" "oslo" "kjeller" "lillestrøm" "fetsund" "lillestrøm" "sarpsborg" "moss" "fredrikstad" "moss"}]
-      ]
-  
+                  {"sandvika" "asker" "oslo" "sandvika" "lillestrøm" "oslo" "moss" "oslo" "kjeller" "lillestrøm" "fetsund" "lillestrøm" "sarpsborg" "moss" "fredrikstad" "moss"}]]
 
-  (test/deftest test-dijkstra
+
+  (test/deftest dijkstra-test
     (test/is (= paths-count
                 (dijkstra (keys neighbours) "asker" neighbours)))
     (test/is (= paths-dist
@@ -44,7 +43,8 @@
                          :dist))
       "fredrikstad"
       "lillestrøm"
-      "kjeller")
+      "kjeller"))
+  (test/deftest a-star-test
     (test/are [final-dest]
               (= (get-in paths-count [0 final-dest])
                  (a-star "asker"
@@ -55,8 +55,7 @@
                          :count))
       "fredrikstad"
       "lillestrøm"
-      "kjeller"))
-     )
+      "kjeller")))
 
-(binding [puzzle-lib/*debug* false]
+(binding [*debug* false]
   (test/run-all-tests #"puzzle-lib.test"))
