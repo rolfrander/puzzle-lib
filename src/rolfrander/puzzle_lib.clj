@@ -1,7 +1,8 @@
 (ns rolfrander.puzzle-lib
   (:require [clojure.data.priority-map :refer [priority-map priority-map-by]]
             [clojure.java.io :as io]
-            [clj-http.client :as http]))
+            [clj-http.client :as http]
+            [clojure.string :as str]))
 
 (def ^:dynamic *debug* "Controls the printing of debuggin-information from this library." false)
 
@@ -37,13 +38,26 @@
               (.write w body))
             body))))))
 
-(defn safe-parse-number 
+; post data
+;Request URL: https://adventofcode.com/2016/day/21/answer
+;Request Method: POST
+;Status Code: 200 
+;cookie: session=53616c7465645f5f...
+;origin: https://adventofcode.com
+;referer: https://adventofcode.com/2016/day/21
+;
+;level=1&answer=gbhcefad
+
+
+(defn str->long 
   "Safe parsing of string to long.
    If s looks like a base-10 number, return a long, otherwise return original string"
   [s]
-  (if (re-matches #"[+-]?[0-9]+" s)
+  (if (and (not (nil? s)) (re-matches #"[+-]?[0-9]+" s))
     (Long/parseLong s)
     s))
+
+(def safe-parse-number str->long) ; backwards compatible alias
 
 (defn split-by
   "Splits sequence.
@@ -80,21 +94,24 @@
                                      dest? (constantly false)}}]
   ; implemented from wikipedia https://en.wikipedia.org/wiki/Dijkstra's_algorithm
   (letfn [(get-path [prev dest] (if (contains? prev dest)
-                                  (cons prev (get-path prev (prev dest)))
+                                  (cons dest (get-path prev (prev dest)))
                                   '()))]
-    (loop [dist (-> (zipmap nodes (repeat 999))
+    (loop [dist (-> (zipmap nodes (repeat 99999999))
                     (assoc source 0))
            prev {}
            Q (into (priority-map) dist)]
       (if (empty? Q)
-        [dist prev]
+        (case result-type
+          :dist dist
+          :prev prev
+          :both [dist prev])
         (let [u (first (peek Q))
               Q (pop Q)]
           (if (dest? u)
             (case result-type
               :dist (dist u)
-              :prev (get-path (prev u) u)
-              :both [(dist u) (get-path (prev u) u)])
+              :prev (get-path prev u)
+              :both [(dist u) (get-path prev u)])
             (let [[new-dist new-prev new-q]
                   (->> (filter Q (neighbour-fn u)) ; for each neighbour v of u, still in Q
                        (reduce (fn [[new-dist new-prev q] v]
@@ -179,3 +196,264 @@
                              [came-from g-score f-score]
                              paths)]
                  (recur came-from g-score f-score (max current-longest estimate)))))))))
+
+(defn interpreter
+  "General interpreter logic.
+   
+   Input is assumed to be a string with lines formatted as `mnemonic parameters...`, with parameters separated by space.
+   The CPU-function should have the following signature: `instruction-pointer state mnemonic parameters` and return a new state. The state
+   should not include instruction-pointer, that is covered by the interpreter. If the instruction is a jump, instead return
+   `{:jmp relative-position}`."
+  [input cpu-function start-state]
+  (let [parse-line (fn [line] (map safe-parse-number (str/split line #" +")))
+        program (cond (vector? input) input
+                      (coll? input) (vec input)
+                      :else (mapv parse-line (str/split-lines input)))
+        last-ip (dec (count program))]
+    (loop [state start-state
+           ip 0
+           cnt 0]
+      (if (> ip last-ip)
+        {:state state :ip ip :count cnt}
+        (let [[mnemonic & params] (get program ip)] 
+          (when *debug* (printf "instruction: %s %s, state: %s\n" mnemonic params state))
+          (let [next-state (cpu-function ip state mnemonic params)]
+            (cond (= next-state :hlt)
+                  {:state state :ip ip :count cnt}
+
+                  (contains? next-state :jmp)
+                  (recur state (+ ip (:jmp next-state)) (inc cnt))
+
+                  :else
+                  (recur next-state (inc ip) (inc cnt)))))))))
+
+(defn char->digit 
+  "Interprets a char [0-9] as digit"
+  [c]
+  (- (int c) (int \0)))
+
+(def neighbours2-4 [     [0  1]
+                    [-1 0]    [1 0]
+                         [0 -1]])
+
+
+(def neighbours2-8 [[-1  1] [0  1] [1  1]
+                    [-1  0]        [1  0]
+                    [-1 -1] [0 -1] [1 -1]])
+
+(def neighbours3-26
+  (for [x (range -1 2)
+        y (range -1 2)
+        z (range -1 2)
+        :when (not-every? (partial = 0) [x y z])]
+    [x y z 0]))
+
+(def neighbours3-6
+  [[-1 0 0][1 0 0]
+   [0 -1 0][0 1 0]
+   [0 0 -1][0 0 1]])
+
+(def neighbours4-80
+  (for [x (range -1 2)
+        y (range -1 2)
+        z (range -1 2)
+        w (range -1 2)
+        :when (not-every? (partial = 0) [x y z w])]
+    [x y z w]))
+
+(def neighbours4-8
+  [[-1 0 0 0][1 0 0 0]
+   [0 -1 0 0][0 1 0 0]
+   [0 0 -1 0][0 0 1 0]
+   [0 0 0 -1][0 0 0 1]])
+
+(def neighbours2 {:sq-4 neighbours2-4
+                  :sq-8 neighbours2-8})
+
+(def neighbours3 {:sq-4 neighbours3-6
+                  :sq-8 neighbours3-26})
+
+(def neighbours4 {:sq-4 neighbours4-8
+                  :sq-8 neighbours4-80})
+
+(def neighbours-n [nil nil neighbours2 neighbours3 neighbours4])
+
+
+; directions for alternating-EW for (even? y)
+(def neighbours-6-even [    [-1  1] [0  1]
+                        [-1  0]       [1  0]
+                            [-1 -1] [0 -1]])
+
+;; (map #(move [0 0] %) (re-seq #"e|w|ne|se|nw|sw" "nwneweswse"))
+; directions for alternating-EW (odd? y)
+(def neighbours-6-odd [    [0  1] [1  1]
+                       [-1  0]      [1  0]
+                           [0 -1] [1 -1]])
+
+;; directions for straight-EW
+(def neighbours-6 [   [-1 1] [0 1]
+                   [-1 0]       [1 0]
+                      [0 -1] [1 -1]])
+
+(def directions-6-ew [  "nw" "ne"
+                      "w"       "e"
+                         "sw" "se"])
+
+(def directions-6-ns [  "nw" "n"
+                      "sw"    "ne"
+                        "s" "se"])
+
+; a bit strange because dimensions are mirrored from the -EW matrices
+; x is even:
+; nw = -1  0
+; n  =  0  1
+; ne =  1  0
+; sw = -1 -1
+; s  =  0 -1
+; se =  1 -1
+
+; x is odd:
+; nw = -1  1
+; n  =  0  1
+; ne =  1  1
+; sw = -1  0
+; s  =  0 -1
+; se =  1  0
+
+(def directions-6-ns-alt [  "se" "ne"
+                          "s"       "n"
+                            "sw" "nw"])
+
+
+(def directions-4 [  "n" 
+                   "w" "e"
+                     "s"])
+(def directions-8 ["nw" "n" "ne"
+                    "w"      "e"
+                   "sw" "s" "se"])
+
+
+(defn switch-xy [n]
+  (doall (map (fn [[x y]] [y x]) n)))
+
+(def directions-maps {:sq-4 (zipmap directions-4 neighbours2-4)
+                      :sq-8 (zipmap directions-8 neighbours2-8)
+                      :hex-ew-str (zipmap directions-6-ew neighbours-6)
+                      :hex-ns-str (zipmap directions-6-ns neighbours-6)
+                      :hex-ew-alt [(zipmap directions-6-ew neighbours-6-even)
+                                   (zipmap directions-6-ew neighbours-6-odd)]
+                      :hex-ns-alt [(zipmap directions-6-ns-alt (switch-xy neighbours-6-even))
+                                   (zipmap directions-6-ns-alt (switch-xy neighbours-6-odd))]})
+
+(defn every< [coll1 coll2]
+  (cond
+    (and (nil? (seq coll1)) (nil? (seq coll2))) true
+    (<= 0 (first coll1) (first coll2)) (recur (next coll1) (next coll2))
+    :else false))
+
+
+(defn move-fn
+  "Creates a function for moving in compass-direction.
+   All of the explanations assume that coordinates are `[x y]` (that is, the first coordinate moves in the east-west-direction).
+   The returned function takes a position and a direction as input. The direction is one of n, s, e, w, ne, se, nw, sw.
+      
+   See neighbours-fn for definition of parameters."
+
+  [grid-type border & {:keys [max-dim]}]
+  (assert (#{:hex-ew-alt :hex-ns-alt :hex-ew-str :hex-ns-str :sq-4 :sq-8} grid-type)
+          (str "unknown grid-type " grid-type))
+  (assert (#{:infinite :ignore :wrap} border)
+          (str "unknown border " border))
+  (assert (or (= border :infinite) (seq max-dim))
+          "if border is :ignore or :wrap, max-dim must be specified")
+  (let [infinite-fn (case grid-type
+                      :hex-ns-alt
+                      (let [[dir-even dir-odd] (directions-maps :hex-ns-alt)]
+                        (fn [[x _y :as pos] direction]
+                          (map + pos (if (odd? x)
+                                       (dir-odd direction)
+                                       (dir-even direction)))))
+
+                      :hex-ew-alt
+                      (let [[dir-even dir-odd] (directions-maps :hex-ew-alt)]
+                        (fn [[_x y :as pos] direction]
+                          (map + pos (if (odd? y)
+                                       (dir-odd direction)
+                                       (dir-even direction)))))
+
+                      (let [dir (directions-maps grid-type)]
+                        (fn [pos direction] (map + pos (dir direction)))))]
+    (case border
+      :infinite infinite-fn
+      :ignore   (fn [pos direction] (let [newpos (infinite-fn pos direction)] (when (every< newpos max-dim) newpos)))
+      :wrap     (fn [pos direction] (map mod (infinite-fn pos direction) max-dim)))))
+
+(defn neighbours-fn
+  "Creates a function for calculating neighbours in a grid.
+   All of the explanations assume that coordinates are `[x y]` (that is, the first coordinate moves in the east-west-direction), but
+   this doesn't really matter for the calculations. The hex-ns and hex-ew are equal but with axes reversed.
+   
+   Grid-type is one of:
+   * `:sq-4` neighbours are north, south, east, west
+   * `:sq-8` as fort `sq-4`, but also diagonals nw, sw, ne, se
+   * `:hex-ns-str` grid of 6-sided tiles where it is possible to move straight north or south
+   * `:hex-ew-str` as above, but where the straight movements are east and west
+   * `:hex-ns-alt` y-lines are squiggly instead of straight NE
+   * `:hex-ew-alt` x-lines are squiggly inste3ad fo straight NE
+
+   Border defines what happens when reaching the end of the map:
+   * `:infinite` means there is no end
+   * `:ignore` means positions larger than max-dim or smaller than 0 are ignored
+   * `:wrap` means wrapping around from max-dim to 0
+   
+   Max-dim is an array of maximum values in each dimension (note that maximum is interpreted differently in :ignore and :wrap).
+   Must be specified if border is not `:infinite`.
+   
+   Dimensions is the number of dimensions. Supported values are 2, 3, 4. Only works for square grids."
+  [grid-type border & {:keys [dimensions max-dim]
+                       :or {dimensions 2}}]
+  (assert (#{:hex-ew-alt :hex-ns-alt :hex-ew-str :hex-ns-str :sq-4 :sq-8} grid-type)
+          (str "unknown grid-type " grid-type))
+  (assert (#{:infinite :ignore :wrap} border)
+          (str "unknown border " border))
+  (assert (or (nil? max-dim) (= (count max-dim) dimensions))
+          "max-dim must have dim number of elements")
+  (assert (or (= border :infinite) (seq max-dim))
+          "if border is :ignore or :wrap, max-dim must be specified")
+  (let [general (fn [n] (fn [pos] (map #(map + pos %) n)))
+        infinite-fn (case grid-type
+                      :hex-ew-str (general neighbours-6)
+                      :hex-ns-str (general neighbours-6)
+                      :hex-ew-alt (fn [[_x y :as pos]]
+                                    (if (odd? y)
+                                      (map #(map + pos %) neighbours-6-odd)
+                                      (map #(map + pos %) neighbours-6-even)))
+                      :hex-ns-alt (fn [[x _y :as pos]]
+                                    (if (odd? x)
+                                      (map #(map + pos %) (switch-xy neighbours-6-odd))
+                                      (map #(map + pos %) (switch-xy neighbours-6-even))))
+                      ; :sq-4 and :sq-8 use the same code, but different neighbour-matrices
+                      (general (get (neighbours-n dimensions) grid-type))
+                      )]
+    (case border
+      :infinite infinite-fn
+      :ignore   (fn [pos] (filter #(every< % max-dim) (infinite-fn pos)))
+      :wrap     (fn [pos] (map #(map mod % max-dim) (infinite-fn pos))))))
+
+(defn ^booleans prime-sieve [cnt]
+  (let [result (boolean-array cnt true)]
+    (aset-boolean result 0 false)
+    (aset-boolean result 1 false)
+    (doseq [i (range 2 (Math/sqrt cnt))]
+      (when (aget result i)
+        (doseq [j (range (* i i) cnt i)]
+          (aset-boolean result j false))))
+    result))
+
+(let [primes ^booleans (prime-sieve 1000000)]
+  (defn is-prime? [look-for-number]
+    (aget primes look-for-number)))
+
+(defn gcd [^long a ^long b]
+  (if (= b 0) a
+      (recur b (long (mod a b)))))
