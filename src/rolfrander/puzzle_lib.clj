@@ -351,6 +351,21 @@
     (<= 0 (first coll1) (first coll2)) (recur (next coll1) (next coll2))
     :else false))
 
+(defn abs [x] (Math/abs x))
+
+(defn sign [x] (cond (= x 0) 0
+                     (> x 0) 1
+                     :else -1))
+
+(defn hexagon-manhattan-distance
+  "Manhattan distance in a hex grid.
+   
+   Only works in straight grids, not alternating.
+   https://stackoverflow.com/questions/5084801/manhattan-distance-between-tiles-in-a-hexagonal-grid"
+  [[x y]]
+  (if (= (sign x) (sign y))
+    (abs (+ x y))
+    (max (abs x) (abs y))))
 
 (defn move-fn
   "Creates a function for moving in compass-direction.
@@ -384,9 +399,9 @@
                       (let [dir (directions-maps grid-type)]
                         (fn [pos direction] (map + pos (dir direction)))))]
     (case border
-      :infinite infinite-fn
-      :ignore   (fn [pos direction] (let [newpos (infinite-fn pos direction)] (when (every< newpos max-dim) newpos)))
-      :wrap     (fn [pos direction] (map mod (infinite-fn pos direction) max-dim)))))
+      :infinite (comp doall infinite-fn)
+      :ignore   (fn [pos direction] (let [newpos (doall (infinite-fn pos direction))] (when (every< newpos max-dim) newpos)))
+      :wrap     (fn [pos direction] (doall (map mod (infinite-fn pos direction) max-dim))))))
 
 (defn neighbours-fn
   "Creates a function for calculating neighbours in a grid.
@@ -457,3 +472,23 @@
 (defn gcd [^long a ^long b]
   (if (= b 0) a
       (recur b (long (mod a b)))))
+
+(defn count-bits 
+  "counts number of bits in input.
+   
+   Works for ints up to 8 bits."
+  [^long i]
+  (let [i (- i (bit-and (bit-shift-right i 1)  0x55555555))
+        i (+   (bit-and                  i     0x33333333)
+               (bit-and (bit-shift-right i 2)  0x33333333))
+        i (bit-and (+ i (bit-shift-right i 4)) 0x0F0F0F0F)
+        i (bit-shift-right                (* i 0x01010101) 24)]
+    i))
+
+(defn map-pairs 
+  "Calls f for each unique pair in coll, lazy."
+  [f coll]
+  (for [a-list (take-while (complement empty?) (iterate rest coll))
+        :let [a (first a-list)]
+        b (rest a-list)]
+    (f a b)))

@@ -224,5 +224,14 @@
     (* 2 3 41 59) (* 2 5 41 43) (* 2 41)
     ))
 
+(deftest count-bits-test
+  (are [input output] (= output (count-bits input))
+    1 1
+    2 1
+    4 1
+    128 1
+    15 4
+    127 7))
+
 (binding [*debug* false]
   (run-all-tests #"puzzle-lib.test"))
