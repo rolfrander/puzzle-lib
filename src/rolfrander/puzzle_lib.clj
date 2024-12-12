@@ -59,6 +59,23 @@
 
 (def safe-parse-number str->long) ; backwards compatible alias
 
+(defn siffer
+  "Returns a seq of each digit in the input as a list of long"
+  [number & {:keys [base]
+             :or {base 10}}]
+  (loop [t number
+         s '()]
+    (if (= 0 t)
+      s
+      (recur (quot t base)
+             (cons (mod t base) s)))))
+
+(defn siffer->long
+  "converts a list of long in a given base to a number"
+  [digit & {:keys [base]
+            :or {base 10}}]
+  (reduce #(+ (* %1 10) %2) digit))
+
 (defn split-by
   "Splits sequence.
    Returns a lazy sequence of seq from coll, starting a new sequence everytime pred change from true to false"
@@ -351,7 +368,7 @@
     (<= 0 (first coll1) (first coll2)) (recur (next coll1) (next coll2))
     :else false))
 
-(defn abs [x] (Math/abs x))
+; (defn abs [x] (Math/abs x))
 
 (defn sign [x] (cond (= x 0) 0
                      (> x 0) 1
@@ -465,9 +482,12 @@
           (aset-boolean result j false))))
     result))
 
-(let [primes ^booleans (prime-sieve 1000000)]
-  (defn is-prime? [look-for-number]
-    (aget primes look-for-number)))
+(defn get-prime-sieve
+  "returns is-prime? for numbers up to max"
+  [max]
+  (let [primes ^booleans (prime-sieve max)]
+    (fn [look-for-number]
+      (aget primes look-for-number))))
 
 (defn gcd [^long a ^long b]
   (if (= b 0) a
@@ -492,3 +512,47 @@
         :let [a (first a-list)]
         b (rest a-list)]
     (f a b)))
+
+
+
+(defn parse-map
+  "input is a string with lines of the same length consisting of '.' meaning a blank space and other markings of interest. Returns a map 
+  {
+    :width
+    :height
+    :markings { } ; mapping from mark-char to list of [x y] positions
+  }"
+  [in]
+  (let [parse-row (fn [markings row y]
+                    (->> (map-indexed #(and (not= %2 \.) [%2 [%1 y]]) row)
+                         (remove false?)
+                         (reduce #(update %1 (first %2) conj (second %2))
+                                 markings)))]
+    (loop [[row & rows] (str/split-lines in)
+           y 0
+           markings {}
+           width 0]
+      (if (nil? row)
+        {:width width
+         :height y
+         :markings markings}
+        (recur rows (inc y)
+               (parse-row markings row y)
+               (count row))))))
+
+(defn draw-map [m]
+  (let [max-x (:width m)
+        max-y (:height m)
+        marks (reduce (fn [res marks]
+                        (let [symbol (first marks)]
+                          (reduce #(assoc %1 %2 symbol)
+                                  res
+                                  (second marks))))
+                      {}
+                      (:markings m))]
+    (doseq [y (range max-y)
+            x (range max-x)]
+      (when (and (= x 0) (> y 0)) (println))
+      (print (get marks [x y] \.)))))
+
+
