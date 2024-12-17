@@ -2,7 +2,12 @@
   (:require [clojure.data.priority-map :refer [priority-map priority-map-by]]
             [clojure.java.io :as io]
             [clj-http.client :as http]
-            [clojure.string :as str]))
+            [clojure.string :as str])
+  (:import
+   [java.io File]
+   [java.awt Color]
+   [java.awt.image BufferedImage]
+   [javax.imageio ImageIO]))
 
 (def ^:dynamic *debug* "Controls the printing of debuggin-information from this library." false)
 
@@ -59,22 +64,31 @@
 
 (def safe-parse-number str->long) ; backwards compatible alias
 
-(defn siffer
+(defn digits
   "Returns a seq of each digit in the input as a list of long"
   [number & {:keys [base]
              :or {base 10}}]
-  (loop [t number
-         s '()]
-    (if (= 0 t)
-      s
-      (recur (quot t base)
-             (cons (mod t base) s)))))
+  (if (= number 0)
+    '(0)
+    (loop [t number
+           s '()]
+      (if (= 0 t)
+        s
+        (recur (quot t base)
+               (cons (mod t base) s))))))
 
-(defn siffer->long
+(def siffer digits)
+
+(defn digits->long
   "converts a list of long in a given base to a number"
   [digit & {:keys [base]
             :or {base 10}}]
   (reduce #(+ (* %1 10) %2) digit))
+
+(def siffer->long digits->long)
+
+(defn safe-inc [x]
+  (if (nil? x) 1 (inc x)))
 
 (defn split-by
   "Splits sequence.
@@ -524,8 +538,7 @@
   }"
   [in]
   (let [parse-row (fn [markings row y]
-                    (->> (map-indexed #(and (not= %2 \.) [%2 [%1 y]]) row)
-                         (remove false?)
+                    (->> (map-indexed #(vector %2 [%1 y]) row)
                          (reduce #(update %1 (first %2) conj (second %2))
                                  markings)))]
     (loop [[row & rows] (str/split-lines in)
@@ -555,4 +568,12 @@
       (when (and (= x 0) (> y 0)) (println))
       (print (get marks [x y] \.)))))
 
-
+(defn print-png [data w h filename]
+  (let [bi (BufferedImage. w h BufferedImage/TYPE_INT_ARGB)
+        g (.createGraphics bi)]
+    (.setColor g Color/BLACK)
+    (.fillRect g 0 0 w h)
+    (doseq [r data]
+      (.setColor g Color/WHITE)
+      (.fillRect g (first r) (second r) 1 1))
+    (ImageIO/write bi "png" (File. (format "%s.png" filename)))))
