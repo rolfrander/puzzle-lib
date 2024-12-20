@@ -124,9 +124,14 @@
                                      result-type :both
                                      dest? (constantly false)}}]
   ; implemented from wikipedia https://en.wikipedia.org/wiki/Dijkstra's_algorithm
-  (letfn [(get-path [prev dest] (if (contains? prev dest)
-                                  (cons dest (get-path prev (prev dest)))
-                                  '()))]
+  (letfn [(get-path
+           ([prev dest]
+            (get-path prev dest []))
+           
+           ([prev dest p]
+            (if (contains? prev dest)
+              (recur prev (prev dest) (conj p dest))
+              (conj p dest))))]
     (loop [dist (-> (zipmap nodes (repeat 99999999))
                     (assoc source 0))
            prev {}
@@ -527,7 +532,27 @@
         b (rest a-list)]
     (f a b)))
 
+; https://en.wikipedia.org/wiki/Heap%27s_algorithm
 
+(defn permute [v]
+  (letfn [(swap [V a b]
+            (assoc V
+                   a (V b)
+                   b (V a)))]
+
+    (loop [stack (vec (repeat (count v) 0))
+           i 1
+           A v
+           output [v]]
+      (if (= i (count stack))
+        output
+        (if (< (stack i) i)
+          (let [A (if (even? i)
+                    (swap A 0 i)
+                    (swap A (stack i) i))
+                output (conj output A)]
+            (recur (update stack i inc) 1 A output))
+          (recur (assoc stack i 0) (inc i) A output))))))
 
 (defn parse-map
   "input is a string with lines of the same length consisting of '.' meaning a blank space and other markings of interest. Returns a map 
