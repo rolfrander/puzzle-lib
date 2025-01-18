@@ -1,10 +1,12 @@
 (ns rolfrander.puzzle.map
-  (:require [rolfrander.puzzle.num :refer [sign]]
-            [rolfrander.puzzle.coll :refer [every<]])
+  (:require
+   [clojure.string :as str]
+   [rolfrander.puzzle.coll :refer [every<]]
+   [rolfrander.puzzle.num :refer [sign]])
   (:import
-   [java.io File]
    [java.awt Color]
    [java.awt.image BufferedImage]
+   [java.io File]
    [javax.imageio ImageIO]))
 
 (def ^:private neighbours2-4 [[0  1]

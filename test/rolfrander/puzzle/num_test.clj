@@ -16,7 +16,7 @@
     \9 9))
 
 (deftest prime-test
-  (let [is-prime? (prime-sieve 2000)]
+  (let [is-prime? (get-prime-sieve 2000)]
     (are [prime] (is-prime? prime)
       2 3 5 7 11 13
       607

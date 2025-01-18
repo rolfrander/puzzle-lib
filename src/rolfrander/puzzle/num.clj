@@ -6,7 +6,7 @@
             (> x 0) 1
             :else -1))
 
-(defn ^booleans prime-sieve [cnt]
+(defn- ^booleans prime-sieve [cnt]
   (let [result (boolean-array cnt true)]
     (aset-boolean result 0 false)
     (aset-boolean result 1 false)
